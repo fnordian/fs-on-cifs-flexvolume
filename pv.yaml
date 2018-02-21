@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv0003
+spec:
+  capacity:
+    storage: 1Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  #storageClassName: standard
+  flexVolume:
+    driver: "fnordian/cv"
+    readOnly: false
+    options:
+      source: "//192.168.121.225/kubvolumes"
+      mountOptions: "dir_mode=0700,file_mode=0600"
+      cifsuser: "nobody"
+      cifspass: "nobody"

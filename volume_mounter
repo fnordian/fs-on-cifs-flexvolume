@@ -1,0 +1,114 @@
+#!/bin/bash
+
+set -e
+
+CIFS=${CIFS://192.168.121.126/kubvolumes}
+CIFSUSER=${CIFSUSER:nobody}
+CIFSPASS=${CIFSPASS:nobody}
+SERVERMNT=/tmp/mnt/server
+
+ACTION=$1
+VOLUME=$2
+TARGET=$3
+
+if [ -z "${ACTION}" ] || [ -z "${VOLUME}" ] || [ -z "$TARGET" ]; then
+	echo "usage: $0 mount|unmount volume target" >&2
+	exit 1
+fi
+
+mkdir -p ${SERVERMNT}
+
+
+function is_server_mounted() {
+	mount | grep -q ${CIFS}
+	return $?
+}
+
+
+
+function is_volume_mounted() {
+	mount | grep -q ${TARGET}
+	return $?
+}
+
+
+
+function mount_server() {
+	set -e -x
+	mount -t cifs -o username=${CIFSUSER},password=${CIFSPASS},fscontext=system_u:object_r:svirt_sandbox_file_t:s0 ${CIFS} ${SERVERMNT}
+}
+
+function create_vol() {
+	set -e
+	VOL=$1
+	dd if=/dev/zero of=${VOL} bs=1M count=1024
+	yes | mkfs.ext4 ${VOL}
+}
+
+
+
+function get_loop_dev_for_vol() {
+	VOL=$1
+	DEV=$(losetup -j ${VOL} | cut -d: -f 1)
+	test -e ${VOL} || create_vol ${VOL}
+
+	if [ -z "${DEV}" ]; then
+		losetup -f ${VOL}
+		DEV=$(losetup -j ${VOL} | cut -d: -f 1)
+	fi
+	echo ${DEV}
+	
+	echo dev: ${DEV} >> /tmp/out
+
+	if [ -z "${DEV}" ]; then
+		return 1
+	else
+		return 0
+	fi
+}
+
+function mount_volume() {
+	set -e
+
+	if is_volume_mounted; then
+		true
+	else
+		VOLUMEPATH=${SERVERMNT}/${VOLUME}
+
+		DEV=$(get_loop_dev_for_vol ${VOLUMEPATH})
+
+		mount -o fscontext=system_u:object_r:svirt_sandbox_file_t:s0 ${DEV} ${TARGET}
+	fi
+}
+
+function unmount_volume() {
+	set -e
+
+	if is_volume_mounted; then
+		umount ${TARGET}
+	else
+		true
+	fi
+}
+
+if is_server_mounted;  then
+	true
+else
+	mount_server
+fi
+
+case ${ACTION} in
+	mount)
+		mount_volume
+		;;
+	unmount)
+		unmount_volume
+		;;
+	*)
+		echo unknown action >&2
+		exit 1
+esac
+
+echo .
+
+
