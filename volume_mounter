@@ -5,19 +5,26 @@ set -e
 CIFS=${CIFS://192.168.121.126/kubvolumes}
 CIFSUSER=${CIFSUSER:nobody}
 CIFSPASS=${CIFSPASS:nobody}
-SERVERMNT=/tmp/mnt/server
 
 ACTION=$1
 VOLUME=$2
 TARGET=$3
 
-if [ -z "${ACTION}" ] || [ -z "${VOLUME}" ] || [ -z "$TARGET" ]; then
+
+if [ -z "${ACTION}" ] || [ -z "$TARGET" ]; then
 	echo "usage: $0 mount|unmount volume target" >&2
 	exit 1
 fi
 
-mkdir -p ${SERVERMNT}
 
+if [ -z "${VOLUME}" ]; then
+	DEV=$(mount | grep ${TARGET} | cut -d" " -f 1)
+	VOLUMEPATH=$(losetup ${DEV} | sed -e 's/.*(\(.*\))/\1/')
+	VOLUME=$(basename ${VOLUMEPATH})
+fi
+
+SERVERMNT=/tmp/mnt/server/${VOLUME}
+mkdir -p ${SERVERMNT}
 
 function is_server_mounted() {
 	mount | grep -q ${CIFS}
@@ -34,8 +41,14 @@ function is_volume_mounted() {
 
 
 function mount_server() {
-	set -e -x
+	set -e 
 	mount -t cifs -o username=${CIFSUSER},password=${CIFSPASS},fscontext=system_u:object_r:svirt_sandbox_file_t:s0 ${CIFS} ${SERVERMNT}
+}
+
+function unmount_server() {
+	set -e
+	umount -f ${SERVERMNT}
+	rmdir ${SERVERMNT}
 }
 
 function create_vol() {
@@ -84,21 +97,30 @@ function mount_volume() {
 function unmount_volume() {
 	set -e
 
+	echo umount target: ${TARGET}
+
+	DEV=$(mount | grep ${TARGET} | cut -d" " -f 1)
+
+	echo umount dev: ${DEV}
+
 	if is_volume_mounted; then
 		umount ${TARGET}
+		losetup -d ${DEV}
+		unmount_server
 	else
 		true
 	fi
+
 }
 
-if is_server_mounted;  then
-	true
-else
-	mount_server
-fi
 
 case ${ACTION} in
 	mount)
+		if is_server_mounted;  then
+			true
+		else
+			mount_server
+		fi
 		mount_volume
 		;;
 	unmount)

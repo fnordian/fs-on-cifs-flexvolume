@@ -82,7 +82,7 @@ unmount() {
 		exit 0
 	fi
 
-	umount ${MNTPATH} &> /dev/null
+	$VOLUMEMOUNTER unmount "" ${MNTPATH} &> /dev/null
 	if [ $? -ne 0 ]; then
 		err "{ \"status\": \"Failed\", \"message\": \"Failed to unmount volume at ${MNTPATH}\"}"
 		exit 1
